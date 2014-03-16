@@ -33,8 +33,10 @@ public:
 	vtkSetMacro(TimeStep, double);
 	vtkGetMacro(TimeStep, double);
 
+	vtkGetMacro(BlockSize, double);
+	vtkGetMacro(MarginRatio, double);
+
 	void PrintSelf(ostream &os, vtkIndent indent);
-	//unsigned long int GetMTime();
 
 	SET_RANGE(X);
 	SET_RANGE(Y);
@@ -54,17 +56,36 @@ public:
 		dimensions[2] = this->Dimensions[2];
 	}
 
+	void UseDefaultSetting() {
+		this->DefaultSetting = true; // It is just about the performance, not about the result, thus does not need to call Modified().
+	}
+
+	bool DefaultSettingOn() {
+		return this->DefaultSetting;
+	}
+
+	void SetBlockSizeAndMarginRatio(double blockSize, double marginRatio) {
+		this->BlockSize = blockSize;
+		this->MarginRatio = marginRatio;
+		this->DefaultSetting = false;
+	}
+
 protected:
 	lcsAxisAlignedFlowMap();
 	~lcsAxisAlignedFlowMap();
-
+	
 	virtual int FillInputPortInformation(int, vtkInformation *);
+	virtual int RequestInformation(vtkInformation *, vtkInformationVector **, vtkInformationVector *outputVector);
 	virtual int RequestData(vtkInformation *request, vtkInformationVector **inputVector, vtkInformationVector *outputVector);
 
 	double XRange[2], YRange[2], ZRange[2];
 	int Dimensions[3];
 	double AdvectionTime;
 	double TimeStep;
+	double BlockSize;
+	double MarginRatio;
+
+	bool DefaultSetting;
 
 private:
 	lcsAxisAlignedFlowMap(const lcsAxisAlignedFlowMap &); // Not implemented.

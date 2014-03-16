@@ -2,6 +2,7 @@
 #include "lcsUnstructuredGridWithTimeVaryingPointData.h"
 #include "lcsFastAdvection.h"
 
+#include <vtkStreamingDemandDrivenPipeline.h>
 #include <vtkObjectFactory.h>
 #include <vtkInformation.h>
 #include <vtkInformationVector.h>
@@ -22,6 +23,8 @@ lcsAxisAlignedFlowMap::lcsAxisAlignedFlowMap() {
 	this->Dimensions[0] = 2;
 	this->Dimensions[1] = 2;
 	this->Dimensions[2] = 2;
+
+	this->DefaultSetting = true;
 }
 
 lcsAxisAlignedFlowMap::~lcsAxisAlignedFlowMap() {
@@ -38,8 +41,6 @@ void lcsAxisAlignedFlowMap::PrintSelf(ostream &os, vtkIndent indent) {
 }
 
 int lcsAxisAlignedFlowMap::FillInputPortInformation(int port, vtkInformation *info) {
-	printf("FillInputPortInformation\n");
-
 	if(!this->Superclass::FillInputPortInformation(port, info))
 		return 0;
 
@@ -48,9 +49,14 @@ int lcsAxisAlignedFlowMap::FillInputPortInformation(int port, vtkInformation *in
 	return 1;
 }
 
-int lcsAxisAlignedFlowMap::RequestData(vtkInformation *request, vtkInformationVector **inputVector, vtkInformationVector *outputVector) {
-	printf("RequestData\n");
+int lcsAxisAlignedFlowMap::RequestInformation(vtkInformation *, vtkInformationVector **, vtkInformationVector *outputVector) {
+	vtkInformation *outInfo = outputVector->GetInformationObject(0);
+	outInfo->Set(vtkStreamingDemandDrivenPipeline::WHOLE_EXTENT(), 0, this->Dimensions[0], 0, this->Dimensions[1], 0, this->Dimensions[2]);
 
+	return 1;
+}
+
+int lcsAxisAlignedFlowMap::RequestData(vtkInformation *request, vtkInformationVector **inputVector, vtkInformationVector *outputVector) {
 	vtkInformation *inInfo = inputVector[0]->GetInformationObject(0);
 	lcsUnstructuredGridWithTimeVaryingPointData *input = lcsUnstructuredGridWithTimeVaryingPointData::SafeDownCast(inInfo->Get(vtkDataObject::DATA_OBJECT()));
 	if (!input)

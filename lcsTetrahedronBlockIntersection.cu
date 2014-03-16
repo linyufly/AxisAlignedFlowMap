@@ -284,7 +284,7 @@ __host__ void TetrahedronBlockIntersection(double *vertexPositions,
 	dim3 dimGrid((numOfQueries - 1) / dimBlock.x + 1, 1, 1);
 
 	/// DEBUG ///
-	printf("epsilon =  %e\n", epsilon);
+	//printf("epsilon =  %e\n", epsilon);
 
 	TetrahedronBlockIntersectionKernel<<<dimGrid, dimBlock>>>(vertexPositions, tetrahedralConnectivities, queryTetrahedron,
 								queryBlock, queryResult, numOfBlocksInY, numOfBlocksInZ, globalMinX, globalMinY, globalMinZ,

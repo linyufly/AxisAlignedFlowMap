@@ -10,7 +10,6 @@
 #include <vtkDoubleArray.h>
 #include <vtkSmartPointer.h>
 #include <vtkPointData.h>
-#include <vtkXMLRectilinearGridWriter.h>
 
 #include <ctime>
 #include <cmath>
@@ -24,6 +23,28 @@
 //#define GET_PATH
 //#define GET_VEL
 //#define BLOCK_STAT
+
+lcsFastAdvection::lcsFastAdvection() {
+	// Up to user
+	this->IntegrationMethod = RK4;
+	this->UseUnitTestForTetBlkIntersection = false;
+	this->UseUnitTestForInitialCellLocation = true;
+
+	// Up to data
+	this->BlockSize = std::numeric_limits<double>::max();
+	this->MarginRatio = 0.0;
+
+	// Up to data, but seldom requires changes
+	this->EpsilonForTetBlkIntersection = 1e-10;
+	this->Epsilon = 1e-8;
+
+	// Up to system
+	this->MaxThreadsPerSM = 512;
+	this->MaxThreadsPerBlock = 256;
+	this->MaxSharedMemoryPerSM = 49000; //49152
+	this->WarpSize = 32;
+	this->MaxMultiple = 16;
+}
 
 extern "C" void TetrahedronBlockIntersection(double *vertexPositions, int *tetrahedralConnectivities, int *queryTetrahedron, int *queryBlock, bool *queryResult,
 					int numOfBlocksInY, int numOfBlocksInZ, double globalMinX, double globalMinY, double globalMinZ, double blockSize,
@@ -209,8 +230,6 @@ void lcsFastAdvection::GetTopologyAndGeometry() {
 	globalNumOfCells = frames[0]->GetTetrahedralGrid()->GetNumOfCells();
 	globalNumOfPoints = frames[0]->GetTetrahedralGrid()->GetNumOfVertices();
 
-	printf("globalNumOfCells = %d, globalNumOfPoints = %d\n", globalNumOfCells, globalNumOfPoints);
-
 	tetrahedralConnectivities = new int [globalNumOfCells * 4];
 	tetrahedralLinks = new int [globalNumOfCells * 4];
 
@@ -241,12 +260,6 @@ void lcsFastAdvection::GetGlobalBoundingBox() {
 		globalMaxZ = std::max(globalMaxZ, point.GetZ());
 		globalMinZ = std::min(globalMinZ, point.GetZ());
 	}
-
-	printf("Global Bounding Box\n");
-	printf("X: [%lf, %lf], length = %lf\n", globalMinX, globalMaxX, globalMaxX - globalMinX);
-	printf("Y: [%lf, %lf], length = %lf\n", globalMinY, globalMaxY, globalMaxY - globalMinY);
-	printf("Z: [%lf, %lf], length = %lf\n", globalMinZ, globalMaxZ, globalMaxZ - globalMinZ);
-	printf("\n");
 }
 
 void lcsFastAdvection::CalculateNumOfBlocksInXYZ() {
@@ -380,16 +393,9 @@ void lcsFastAdvection::LaunchGPUforIntersectionQueries() {
 	err = cudaMemcpy(d_queryBlock, queryBlock, sizeof(int) * numOfQueries, cudaMemcpyHostToDevice);
 	if (err) lcs::Error("Fail to copy queryBlock");
 
-	printf("Start to use GPU to process tetrahedron-block intersection queries ...\n");
-	printf("\n");
-
-	int startTime = clock();
-
 	TetrahedronBlockIntersection(d_vertexPositions, d_tetrahedralConnectivities, d_queryTetrahedron,
 					d_queryBlock, d_queryResults, numOfBlocksInY, numOfBlocksInZ, globalMinX, globalMinY, globalMinZ,
 					blockSize, this->GetEpsilonForTetBlkIntersection(), numOfQueries, this->GetMarginRatio());
-
-	int endTime = clock();
 
 	// Copy from device to host
 	err = cudaMemcpy(queryResults, d_queryResults, sizeof(bool) * numOfQueries, cudaMemcpyDeviceToHost);
@@ -399,48 +405,6 @@ void lcsFastAdvection::LaunchGPUforIntersectionQueries() {
 	cudaFree(d_queryTetrahedron);
 	cudaFree(d_queryBlock);
 	cudaFree(d_queryResults);
-
-	printf("First 10 results: ");
-	for (int i = 0; i < 10; i++)
-		printf("%d", queryResults[i]);
-	printf("\n\n");
-
-	int sum = 0;
-	for (int i = 0; i < numOfQueries; i++)
-		sum += queryResults[i];
-	printf("sum of queryResults[i] = %d\n", sum);
-
-	printf("The GPU Kernel for tetrahedron-block intersection queries cost %lf sec.\n",
-	       (endTime - startTime) * 1.0 / CLOCKS_PER_SEC);
-	printf("\n");
-
-	// Unit Test for Tetrahedron-Block Intersection Kernel
-	startTime = clock();
-
-	/// DEBUG ///
-	/*
-	int specialTet = 6083453, specialBlk = 66;
-	char specialRes = 1;
-	UnitTestForTetBlkIntersection(frames[0]->GetTetrahedralGrid(),
-						   blockSize, globalMinX, globalMinY, globalMinZ,
-						   numOfBlocksInY, numOfBlocksInZ,
-						   &specialTet, &specialBlk, &specialRes,
-						   1, configure->GetEpsilonForTetBlkIntersection());
-	*/
-	
-	if (this->GetUseUnitTestForTetBlkIntersection()) {
-		UnitTestForTetBlkIntersection(frames[0]->GetTetrahedralGrid(),
-						   blockSize, globalMinX, globalMinY, globalMinZ,
-						   numOfBlocksInY, numOfBlocksInZ,
-						   queryTetrahedron, queryBlock, queryResults,
-						   numOfQueries, this->GetEpsilonForTetBlkIntersection());
-		printf("\n");
-	}
-
-	endTime = clock();
-
-	printf("The unit test cost %lf sec.\n", (endTime - startTime) * 1.0 / CLOCKS_PER_SEC);
-	printf("\n");
 }
 
 void lcsFastAdvection::DivisionProcess() {
@@ -453,14 +417,6 @@ void lcsFastAdvection::DivisionProcess() {
 	if (err) lcs::Error("Fail to create device interestingBlockMap");
 
 	numOfInterestingBlocks = 0;
-
-	/// DEBUG ///
-	/*
-	for (int i = 0; i < numOfQueries; i++)
-		if (queryTetrahedron[i] == 6083453 || queryTetrahedron[i] == 6083454) {
-			printf("tet: %d, blk: %d, res: %d\n", queryTetrahedron[i], queryBlock[i], queryResults[i]);
-		}
-	*/
 
 	for (int i = 0; i < numOfQueries; i++)
 		if (queryResults[i]) {
@@ -509,7 +465,7 @@ void lcsFastAdvection::DivisionProcess() {
 		/// DEBUG ///
 		if (numOfBlocksOfTetrahedron[i - 1] == 0) {
 			printf("zero: i = %d\n", i);
-			break;
+			lcs::Error("Zero found");
 		}
 
 		startOffsetsInLocalIDMap[i] = startOffsetsInLocalIDMap[i - 1] + numOfBlocksOfTetrahedron[i - 1];
@@ -557,11 +513,6 @@ void lcsFastAdvection::DivisionProcess() {
 			printf("%d %d\n", i, startOffsetsInLocalIDMap[i]);
 			lcs::Error("local ID Map error");
 		}
-
-	printf("hash size = %d\n", startOffsetsInLocalIDMap[globalNumOfCells]);
-	printf("sizeOfHashMap = %d\n", sizeOfHashMap);
-
-	printf("globalNumOfCells = %d\n", globalNumOfCells);
 
 	// Fill some device arrays
 	err = cudaMemcpy(d_startOffsetsInLocalIDMap, startOffsetsInLocalIDMap, sizeof(int) * (globalNumOfCells + 1), cudaMemcpyHostToDevice);
@@ -635,15 +586,8 @@ void lcsFastAdvection::DivisionProcess() {
 		// Mark whether the block can fit into the shared memory
 		int currentBlockMemoryCost = blocks[i]->EvaluateNumOfBytes();
 
-		//if (currentBlockMemoryCost <= configure->GetSharedMemoryKilobytes() * 1024) smallEnoughBlocks++;
 		if (currentBlockMemoryCost <= this->GetMaxSharedMemoryPerSM()) smallEnoughBlocks++;
 		if (currentBlockMemoryCost <= this->GetMaxSharedMemoryPerSM() && currentBlockMemoryCost > maxSharedMemoryRequired) maxSharedMemoryRequired = currentBlockMemoryCost;
-
-		//if (currentBlockMemoryCost <= configure->GetSharedMemoryKilobytes() * 1024) {
-		//	smallEnoughBlocks++;
-		//	canFitInSharedMemory[i] = true;
-		//} else
-		//	canFitInSharedMemory[i] = false;
 
 		// Calculate the local connectivity and link
 		for (int j = 0; j < blocks[i]->GetLocalNumOfCells(); j++) {
@@ -674,25 +618,6 @@ void lcsFastAdvection::DivisionProcess() {
 		blocks[i]->CreateLocalLinks(tempLinks);
 	}
 	
-	printf("Division is done. smallEnoughBlocks = %d\n", smallEnoughBlocks);
-	printf("maxSharedMemoryRequired = %d\n", maxSharedMemoryRequired);
-	printf("\n");
-
-	// Select big blocks
-	//int *bigBlocks = new int [numOfInterestingBlocks];
-	//numOfBigBlocks = 0;
-	//for (int i = 0; i < numOfInterestingBlocks; i++)
-	//	if (!canFitInSharedMemory[i])
-	//		bigBlocks[numOfBigBlocks++] = i;
-
-	//err = cudaMalloc(&d_bigBlocks, sizeof(int) * numOfBigBlocks);
-	//if (err) lcs::Error("Fail to create device bigBlocks");
-
-	//err = cudaMemcpy(d_bigBlocks, bigBlocks, sizeof(int) * numOfBigBlocks, cudaMemcpyHostToDevice);
-	//if (err) lcs::Error("Fail to write to d_bigBlockFail to write to d_bigBlocks");
-
-	//delete [] bigBlocks;
-
 	// Release work arrays
 	delete [] cellMarks;
 	delete [] pointMarks;
@@ -701,26 +626,6 @@ void lcsFastAdvection::DivisionProcess() {
 	delete [] pointList;
 	delete [] tempConnectivities;
 	delete [] tempLinks;
-
-	// Some statistics
-	int minPos = globalNumOfCells, maxPos = 0;
-	int numOfUnder100 = 0, numOfUnder200 = 0;
-
-	for (int i = 0; i < numOfInterestingBlocks; i++) {
-		maxPos = std::max(maxPos, blocks[i]->GetLocalNumOfCells());
-		minPos = std::min(minPos, blocks[i]->GetLocalNumOfCells());
-		numOfUnder100 += blocks[i]->GetLocalNumOfCells() < 100;
-		numOfUnder200 += blocks[i]->GetLocalNumOfCells() < 200;
-	}
-	
-	printf("Statistics\n");
-	printf("The number of blocks is %d.\n", numOfBlocks);
-	printf("The number of non-zero blocks is %d.\n", numOfInterestingBlocks);
-	printf("The number of under-100 blocks is %d.\n", numOfUnder100);
-	printf("The number of under-200 blocks is %d.\n", numOfUnder200);
-	printf("The maximum number of tetrahedrons in a block is %d.\n", maxPos);
-	printf("The minimum non-zero number of tetrahedrons in a block is %d.\n", minPos);
-	printf("\n");
 }
 
 void lcsFastAdvection::StoreBlocksInDevice() {
@@ -740,14 +645,6 @@ void lcsFastAdvection::StoreBlocksInDevice() {
 		maxNumOfPoints += blocks[i]->GetLocalNumOfPoints();
 	}
 
-	printf("Total number of cells in all the blocks is %d.\n", startOffsetInCell[numOfInterestingBlocks]);
-	printf("Total number of points in all the blocks is %d.\n", startOffsetInPoint[numOfInterestingBlocks]);
-	printf("\n");
-
-	//Create d_canFitInSharedMemory
-	//err = cudaMalloc(&d_canFitInSharedMemory, sizeof(bool) * numOfInterestingBlocks);
-	//if (err) lcs::Error("Fail to create a buffer for device canFitInSharedMemory");
-
 	// Create d_vertexPositionsForBig
 	err = cudaMalloc(&d_vertexPositionsForBig, sizeof(double) * 3 * maxNumOfPoints);
 	if (err) lcs::Error("Fail to create a buffer for device vertexPositionsForBig");
@@ -764,17 +661,9 @@ void lcsFastAdvection::StoreBlocksInDevice() {
 	err = cudaMalloc(&d_startOffsetInCell, sizeof(int) * (numOfInterestingBlocks + 1));
 	if (err) lcs::Error("Fail to create a buffer for device startOffsetInCell");
 
-	// Create d_startOffsetInCellForBig
-	//err = cudaMalloc(&d_startOffsetInCellForBig, sizeof(int) * (numOfInterestingBlocks + 1));
-	//if (err) lcs::Error("Fail to create a buffer for device startOffsetInCellForBig");
-
 	// Create d_startOffsetInPoint
 	err = cudaMalloc(&d_startOffsetInPoint, sizeof(int) * (numOfInterestingBlocks + 1));
 	if (err) lcs::Error("Fail to create a buffer for device startOffsetInPoint");
-
-	// Create d_startOffsetInPointForBig
-	//err = cudaMalloc(&d_startOffsetInPointForBig, sizeof(int) * (numOfInterestingBlocks + 1));
-	//if (err) lcs::Error("Fail to create a buffer for device startOffsetInPointForBig");
 
 	// Create d_localConnectivities
 	err = cudaMalloc(&d_localConnectivities, sizeof(int) * startOffsetInCell[numOfInterestingBlocks] * 4);
@@ -792,25 +681,13 @@ void lcsFastAdvection::StoreBlocksInDevice() {
 	err = cudaMalloc(&d_globalPointIDs, sizeof(int) * startOffsetInPoint[numOfInterestingBlocks]);
 	if (err) lcs::Error("Fail to create a buffer for device globalPointIDs");
 
-	// Fill d_canFitInSharedMemory
-	//err = cudaMemcpy(d_canFitInSharedMemory, canFitInSharedMemory, sizeof(bool) * numOfInterestingBlocks, cudaMemcpyHostToDevice);
-	//if (err) lcs::Error("Fail to write-to-device for d_canFitInSharedMemory");
-
 	// Fill d_startOffsetInCell
 	err = cudaMemcpy(d_startOffsetInCell, startOffsetInCell, sizeof(int) * (numOfInterestingBlocks + 1), cudaMemcpyHostToDevice);
 	if (err) lcs::Error("Fail to write-to-device for d_startOffsetInCell");
 
-	// Fill d_startOffsetInCellForBig
-	//err = cudaMemcpy(d_startOffsetInCellForBig, startOffsetInCellForBig, sizeof(int) * (numOfInterestingBlocks + 1), cudaMemcpyHostToDevice);
-	//if (err) lcs::Error("Fail to write-to-device for d_startOffsetInCellForBig");
-
 	// Fill d_startOffsetInPoint
 	err = cudaMemcpy(d_startOffsetInPoint, startOffsetInPoint, sizeof(int) * (numOfInterestingBlocks + 1), cudaMemcpyHostToDevice);
 	if (err) lcs::Error("Fail to write-to-device for d_startOffsetInPoint");
-
-	// Fill d_startOffsetInPointForBig
-	//err = cudaMemcpy(d_startOffsetInPointForBig, startOffsetInPointForBig, sizeof(int) * (numOfInterestingBlocks + 1), cudaMemcpyHostToDevice);
-	//if (err) lcs::Error("Fail to write-to-device for d_startOffsetInPointForBig");
 
 	// Fill d_localConnectivities
 	for (int i = 0; i < numOfInterestingBlocks; i++) {
@@ -880,9 +757,6 @@ void lcsFastAdvection::Division() {
 }
 
 void lcsFastAdvection::AAInitialCellLocation() {
-	printf("Start to use GPU to process initial cell location ...\n");
-	printf("\n");
-
 	double range[2];
 
 	this->caller->GetXRange(range);
@@ -932,46 +806,9 @@ void lcsFastAdvection::AAInitialCellLocation() {
 
 	// Delete d_cellLocations
 	cudaFree(d_cellLocations);
-
-	/// DEBUG ///
-	//FILE *locationFile = fopen("lcsInitialLocations.txt", "w");
-	//for (int i = 0; i < numOfGridPoints; i++)
-	//	if (initialCellLocations[i] != -1)
-	//		fprintf(locationFile, "%d %d\n", i, initialCellLocations[i]);
-	//fclose(locationFile);
-	printf("First 10 results: ");
-	for (int i = 0; i < 10; i++) {
-		if (i) printf(" ");
-		printf("%d", initialCellLocations[i]);
-	}
-	printf("\n\n");
-
-	printf("The GPU Kernel for initial cell locations cost %lf sec.\n", (endTime - startTime) * 1.0 / CLOCKS_PER_SEC);
-	printf("\n");
-
-	// Unit Test for Initial Cell Location Kernel
-	startTime = clock();
-
-	if (this->GetUseUnitTestForInitialCellLocation()) {
-		lcs::UnitTestForInitialCellLocations(frames[0]->GetTetrahedralGrid(),
-						     xRes, yRes, zRes,
-						     minX, minY, minZ,
-						     dx, dy, dz,
-						     initialCellLocations,
-						     this->GetEpsilon());
-		printf("\n");
-	}
-
-	endTime = clock();
-
-	printf("The unit test cost %lf sec.\n", (endTime - startTime) * 1.0 / CLOCKS_PER_SEC);
-	printf("\n");
 }
 
 void lcsFastAdvection::InitializeParticleRecordsInDevice() {
-	/// DEBUG ///
-	printf("In the beginning of InitializeParticleRecordsInDevice(): numOfInitialActiveParticles = %d\n", numOfInitialActiveParticles);
-
 	// Initialize activeBlockOfParticles
 	err = cudaMalloc(&d_activeBlockOfParticles, sizeof(int) * numOfInitialActiveParticles);
 	if (err) lcs::Error("Fail to create a buffer for device activeBlockOfParticles");
@@ -1034,7 +871,6 @@ void lcsFastAdvection::InitializeParticleRecordsInDevice() {
 			lastPosition[i * 3 + 1] = y;
 			lastPosition[i * 3 + 2] = z;
 		}
-
 		
 		err = cudaMalloc(&d_lastPositionForRK4, sizeof(double) * 3 * numOfInitialActiveParticles);
 		if (err) lcs::Error("Fail to create a buffer for device lastPosition for RK4");
@@ -1056,14 +892,6 @@ void lcsFastAdvection::InitializeParticleRecordsInDevice() {
 
 		err = cudaMemcpy(d_nxForRK4, lastPosition, sizeof(double) * 3 * numOfInitialActiveParticles, cudaMemcpyHostToDevice);
 		if (err) lcs::Error("Fail to write-to-device for d_nxForRK4");
-
-		// Initialize d_k2ForRK4
-		//err = cudaMalloc(&d_k2ForRK4, sizeof(double) * 3 * numOfInitialActiveParticles);
-		//if (err) lcs::Error("Fail to create a buffer for device k2 for RK4");
-
-		// Initialize d_k3ForRK4
-		//err = cudaMalloc(&d_k3ForRK4, sizeof(double) * 3 * numOfInitialActiveParticles);
-		//if (err) lcs::Error("Fail to create a buffer for device k3 for RK4");
 	} break;
 	}
 
@@ -1081,26 +909,15 @@ void lcsFastAdvection::FABigBlockInitializationForVelocities(int currStartVIndex
 }
 
 void lcsFastAdvection::LaunchBlockedTracingKernel(int numOfWorkGroups, double beginTime, double finishTime, int blockSize, int sharedMemorySize, int multiple) {
-	//printf("Start to use GPU to process blocked tracing ...\n");
-	//printf("\n");
-
 	double startTime = lcs::GetCurrentTimeInSeconds();
 
-	BlockedTracingOfRK4(/*d_vertexPositions, d_tetrahedralConnectivities,
-				d_tetrahedralLinks, d_startOffsetInCell, d_startOffsetInPoint, d_vertexPositionsForBig, d_startVelocitiesForBig, d_endVelocitiesForBig, 
-				d_localConnectivities, d_localLinks, d_globalCellIDs, d_activeBlocks, // Map active block ID to interesting block ID
-				d_blockOfGroups, d_offsetInBlocks, d_stages, d_lastPositionForRK4, d_k1ForRK4, d_k2ForRK4, d_k3ForRK4, d_pastTimes, d_placesOfInterest,
-				d_startOffsetInParticles, d_blockedActiveParticles, d_localTetIDs, d_exitCells,*/
-				beginTime, finishTime, this->caller->GetTimeStep(), this->GetEpsilon(), numOfWorkGroups, blockSize, sharedMemorySize, multiple);
+	BlockedTracingOfRK4(beginTime, finishTime, this->caller->GetTimeStep(), this->GetEpsilon(), numOfWorkGroups, blockSize, sharedMemorySize, multiple);
 
 	double endTime = lcs::GetCurrentTimeInSeconds();
 
 	/// DEBUG ///
 	kernelSum += endTime - startTime;
 	kernelSumInInterval += endTime - startTime;
-
-	//printf("The GPU Kernel for blocked tracing cost %lf sec.\n", endTime - startTime);
-	//printf("\n");
 }
 
 void lcsFastAdvection::InitializeInitialActiveParticles() {
@@ -1143,8 +960,6 @@ void lcsFastAdvection::InitializeInitialActiveParticles() {
 	// Initialize particleRecords
 	particleRecords = new lcs::ParticleRecord * [numOfInitialActiveParticles];
 
-	printf("after new particle records\n");
-
 	int idx = -1, activeIdx = -1;
 	for (int i = 0; i <= xRes; i++)
 		for (int j = 0; j <= yRes; j++)
@@ -1166,14 +981,10 @@ void lcsFastAdvection::InitializeInitialActiveParticles() {
 				}
 			}
 
-	printf("after 3 nested loops %d %d\n", activeIdx, numOfInitialActiveParticles);
-
 	// Initialize exitCells
 	exitCells = new int [numOfInitialActiveParticles];
 	for (int i = 0; i < numOfInitialActiveParticles; i++)
 		exitCells[i] = initialCellLocations[particleRecords[i]->GetGridPointID()];
-
-	printf("before in device\n");
 
 	// Initialize particle records in device
 	InitializeParticleRecordsInDevice();
@@ -1202,14 +1013,6 @@ void lcsFastAdvection::LoadVelocities(double *velocities, double *d_velocities, 
 	// Read velocities
 	frames[frameIdx]->GetTetrahedralGrid()->ReadVelocities(velocities);
 
-	/// DEBUG ///
-/*
-	FILE *fout = fopen("velocityTest.txt", "w");
-	for (int i = 0; i < globalNumOfPoints; i++)
-		fprintf(fout, "%.9lf %.9lf %.9lf\n", velocities[i * 3], velocities[i * 3 + 1], velocities[i * 3 + 2]);
-	fclose(fout);
-	exit(0);
-*/	
 	// Write for d_velocities[frameIdx]
 	err = cudaMemcpy(d_velocities, velocities, sizeof(double) * 3 * globalNumOfPoints, cudaMemcpyHostToDevice);
 	if (err) lcs::Error("Fail to copy for d_velocities");
@@ -1234,8 +1037,7 @@ int lcsFastAdvection::CollectActiveParticlesForNewInterval(int *d_activeParticle
 	InitializeScanArray(d_exitCells, d_exclusiveScanArrayForInt, numOfInitialActiveParticles);
 
 	// Launch exclusive scan
-	int sum;
-	sum = ExclusiveScanForInt(d_exclusiveScanArrayForInt, numOfInitialActiveParticles);
+	int sum = ExclusiveScanForInt(d_exclusiveScanArrayForInt, numOfInitialActiveParticles);
 
 	// Compaction
 	CollectActiveParticles(d_exitCells, d_exclusiveScanArrayForInt, d_activeParticles, numOfInitialActiveParticles);
@@ -1251,9 +1053,6 @@ int lcsFastAdvection::CollectActiveParticlesForNewRun(int *d_oldActiveParticles,
 	// Launch exclusive scan
 	int sum;
 	sum = ExclusiveScanForInt(d_exclusiveScanArrayForInt, length);
-
-	/// DEBUG ///
-	//printf("CollectActiveParticlesForNewRun(): length = %d, sum = %d\n", length, sum);
 
 	// Compaction
 	CollectActiveParticles2(d_exitCells, d_oldActiveParticles, d_exclusiveScanArrayForInt, d_newActiveParticles, length);
@@ -1271,13 +1070,6 @@ void lcsFastAdvection::InitializeInterestingBlockMarks() {
 }
 
 int lcsFastAdvection::RedistributeParticles(int *d_activeParticles, int numOfActiveParticles, int iBMCount, int numOfStages) {
-	/// DEBUG ///
-	//err = cudaDeviceSynchronize();
-	//printf("Before collect blocks Kernel, err = %d\n", err);
-
-	/// DEBUG ///
-	//printf("iBMCount = %d\n", iBMCount);
-
 	// Intialize d_numOfActiveBlocks
 	err = cudaMemset(d_numOfActiveBlocks, 0, sizeof(int));
 	if (err) lcs::Error("Fail to initialize d_numOfActiveBlocks");
@@ -1286,7 +1078,7 @@ int lcsFastAdvection::RedistributeParticles(int *d_activeParticles, int numOfAct
 	CollectActiveBlocks(d_activeParticles, d_exitCells, d_placesOfInterest, d_localTetIDs, d_blockLocations, d_interestingBlockMap,
 			d_startOffsetsInLocalIDMap, d_blocksOfTets, d_localIDsOfTets, d_interestingBlockMarks, d_activeBlocks,
 			d_activeBlockIndices, d_numOfActiveBlocks, // Initially 0
-			iBMCount, numOfActiveParticles, //int numOfStages,
+			iBMCount, numOfActiveParticles,
 			numOfBlocksInX, numOfBlocksInY, numOfBlocksInZ, globalMinX, globalMinY, globalMinZ,
 			blockSize, this->GetEpsilon());
 
@@ -1295,9 +1087,6 @@ int lcsFastAdvection::RedistributeParticles(int *d_activeParticles, int numOfAct
 
 	err = cudaMemcpy(&numOfActiveBlocks, d_numOfActiveBlocks, sizeof(int), cudaMemcpyDeviceToHost);
 	if (err) lcs::Error("Fail to read d_numOfActiveBlocks");
-
-	/// DEBUG ///
-	//printf("numOfActiveBlocks = %d\n", numOfActiveBlocks);
 
 	// Get the number of particles by stage in blocks
 	err = cudaMemset(d_numOfParticlesByStageInBlocks, 0, numOfActiveBlocks * numOfStages * sizeof(int));
@@ -1321,11 +1110,6 @@ int lcsFastAdvection::RedistributeParticles(int *d_activeParticles, int numOfAct
 }
 
 void lcsFastAdvection::GetStartOffsetInParticles(int numOfActiveBlocks, int numOfActiveParticles, int maxNumOfStages) {
-	/// DEBUG ///
-	//printf("In GetStartOffsetInParticles()\n");
-	//printf("numOfActiveBlocks = %d\n", numOfActiveBlocks);
-	//printf("numOfActiveParticles = %d\n", numOfActiveParticles);
-
 	err = cudaMemcpy(d_startOffsetInParticles + numOfActiveBlocks, &numOfActiveParticles, sizeof(int), cudaMemcpyHostToDevice);
 	if (err) lcs::Error("Fail to write to d_startOffsetInParticles");
 
@@ -1337,8 +1121,7 @@ int lcsFastAdvection::AssignWorkGroups(int numOfActiveBlocks, int tracingBlockSi
 	GetNumOfGroupsForBlocks(d_startOffsetInParticles, d_numOfGroupsForBlocks, numOfActiveBlocks, tracingBlockSize * multiple);
 
 	// Exclusive scan of numOfGroupsForBlocks
-	int sum;
-	sum = ExclusiveScanForInt(d_numOfGroupsForBlocks, numOfActiveBlocks);
+	int sum = ExclusiveScanForInt(d_numOfGroupsForBlocks, numOfActiveBlocks);
 
 	// Fill in the sum
 	err = cudaMemcpy(d_numOfGroupsForBlocks + numOfActiveBlocks, &sum, sizeof(int), cudaMemcpyHostToDevice);
@@ -1357,21 +1140,11 @@ void lcsFastAdvection::CalculateBlockSizeAndSharedMemorySizeForTracingKernel(dou
 		tracingBlockSize += this->GetWarpSize();
 	if (tracingBlockSize > this->GetMaxThreadsPerBlock())
 		tracingBlockSize = this->GetMaxThreadsPerBlock();
-/*
-	for (int i = WARP_SIZE; ; i <<= 1)
-		if (i > tracingBlockSize) {
-			tracingBlockSize = i >> 1;
-			break;
-		}
-*/
 	if (tracingBlockSize < this->GetWarpSize())
 		tracingBlockSize = this->GetWarpSize();
 
-	/// DEBUG ///
-	//tracingBlockSize = MAX_THREADS_PER_BLOCK;
-
 	multiple = (int)(averageParticlesInBlock / tracingBlockSize);
-	//multiple++;
+	//multiple++
 	if (!multiple) multiple = 1;
 	if (multiple > this->GetMaxMultiple()) multiple = this->GetMaxMultiple();
 
@@ -1380,12 +1153,9 @@ void lcsFastAdvection::CalculateBlockSizeAndSharedMemorySizeForTracingKernel(dou
 	tracingSharedMemorySize = this->GetMaxSharedMemoryPerSM() / maxNumOfBlocks;
 	if (tracingSharedMemorySize > maxSharedMemoryRequired)
 		tracingSharedMemorySize = maxSharedMemoryRequired;
-	//printf("tracingBlockSize = %d, tracingSharedMemorySize = %d, multiple = %d\n", tracingBlockSize, tracingSharedMemorySize, multiple);
 }
 
 void lcsFastAdvection::Tracing() {
-	printf("lcsFastAdvection::Tracing()\n");
-
 	// Initialize d_tetrahedralLinks
 	err = cudaMalloc(&d_tetrahedralLinks, sizeof(int) * globalNumOfCells * 4);
 	if (err) lcs::Error("Fail to create a buffer for device tetrahedralLinks");
@@ -1393,20 +1163,14 @@ void lcsFastAdvection::Tracing() {
 	err = cudaMemcpy(d_tetrahedralLinks, tetrahedralLinks, sizeof(int) * globalNumOfCells * 4, cudaMemcpyHostToDevice);
 	if (err) lcs::Error("Fail to fill d_tetrahedralLinks");
 
-	printf("before init active particles\n");
-
 	// Initialize initial active particle data
 	InitializeInitialActiveParticles();
-
-	printf("after that\n");
 
 	// Initialize velocity data
 	double *velocities[2];
 	int currStartVIndex = 1;
 	InitializeVelocityData(velocities);
-
-	printf("after init vel data\n");
-
+	
 	// Create some dynamic device arrays
 	err = cudaMalloc(&d_exclusiveScanArrayForInt, sizeof(int) * std::max(numOfInterestingBlocks, numOfInitialActiveParticles));
 	if (err) lcs::Error("Fail to create a buffer for device exclusiveScanArrayForInt");
@@ -1434,9 +1198,7 @@ void lcsFastAdvection::Tracing() {
 
 	err = cudaMalloc(&d_blockedActiveParticles, sizeof(int) * numOfInitialActiveParticles);
 	if (err) lcs::Error("Fail to create a buffer for device blockedAciveParticles");
-
-	printf("before init interesting block marks\n");
-
+	
 	// Initialize interestingBlockMarks to {-1}
 	InitializeInterestingBlockMarks();
 	int iBMCount = 0;
@@ -1456,7 +1218,6 @@ void lcsFastAdvection::Tracing() {
 	// Some start setting
 	currActiveParticleArray = 0;
 	double currTime = 0;
-	//double interval = configure->GetTimeInterval();
 	
 #ifdef TET_WALK_STAT
 	err = cudaMalloc(&d_numOfTetWalks, sizeof(int) * numOfInitialActiveParticles);
@@ -1470,7 +1231,7 @@ void lcsFastAdvection::Tracing() {
 				d_tetrahedralLinks, d_startOffsetInCell, d_startOffsetInPoint, d_vertexPositionsForBig, d_startVelocitiesForBig, d_endVelocitiesForBig, 
 				d_localConnectivities, d_localLinks, d_globalCellIDs, d_activeBlocks, // Map active block ID to interesting block ID
 				d_blockOfGroups, d_offsetInBlocks, d_stages, d_lastPositionForRK4,
-				d_kForRK4, d_nxForRK4, /*d_k2ForRK4, d_k3ForRK4,*/ d_pastTimes, d_placesOfInterest,
+				d_kForRK4, d_nxForRK4, d_pastTimes, d_placesOfInterest,
 				d_startOffsetInParticles, d_blockedActiveParticles, d_localTetIDs, d_exitCells, this->caller->GetTimeStep(), this->GetEpsilon()
 
 #ifdef TET_WALK_STAT
@@ -1480,10 +1241,6 @@ void lcsFastAdvection::Tracing() {
 );
 	
 	// Main loop for blocked tracing
-	/// DEBUG ///
-	//int startTime = clock();
-
-	//numOfTimePoints = this->numOfTimePoints; ->GetNumOfTimePoints();
 	double startTime = lcs::GetCurrentTimeInSeconds();
 
 	/// DEBUG ///
@@ -1504,9 +1261,7 @@ void lcsFastAdvection::Tracing() {
 #endif
 
 	double interval;
-
-	printf("begin main loop\n");
-
+	
 	for (int frameIdx = 0; currTime < this->caller->GetAdvectionTime(); frameIdx++, currTime += interval) {
 		interval = frameIdx + 1 < this->numOfFrames ? this->input->GetTimePoint(frameIdx + 1) - this->input->GetTimePoint(frameIdx) :
 			                                          this->input->GetTimePoint(1) - this->input->GetTimePoint(0);
@@ -1526,12 +1281,8 @@ void lcsFastAdvection::Tracing() {
 //		GetLastPositions(fileName, currTime);
 //#endif
 
-		printf("*********Tracing between time point %d and time point %d*********\n", frameIdx, frameIdx + 1);
-		printf("\n");
-
 		/// DEBUG ///
 		int startTime;
-		//startTime = clock();
 
 		currStartVIndex = 1 - currStartVIndex;
 
@@ -1540,19 +1291,13 @@ void lcsFastAdvection::Tracing() {
 
 		lastNumOfActiveParticles = CollectActiveParticlesForNewInterval(d_activeParticles[currActiveParticleArray]);
 
-		/// DEBUG ///
-		printf("numOfActiveParticles = %d\n", lastNumOfActiveParticles);
-
 		// Load end velocities
 		LoadVelocities(velocities[1 - currStartVIndex], d_velocities[1 - currStartVIndex], (frameIdx + 1) % numOfFrames);
 
 		// Initialize big blocks
 		FABigBlockInitializationForVelocities(currStartVIndex);
-
-		/// DEBUG ///
-		//printf("BigBlockInitializationForVelocities done.\n");
-
-		startTime = clock();
+		
+		//startTime = clock();
 		kernelSumInInterval = 0;
 
 		while (true) {
@@ -1606,10 +1351,10 @@ void lcsFastAdvection::Tracing() {
 			LaunchBlockedTracingKernel(numOfWorkGroups, currTime, currTime + interval, tracingBlockSize, tracingSharedMemorySize, multiple);
 		}
 
-		int endTime = clock();
-		printf("This interval cost %lf sec.\n", (double)(endTime - startTime) / CLOCKS_PER_SEC);
-		printf("kernelSumInInterval = %lf sec.\n", kernelSumInInterval);
-		printf("\n");
+		//int endTime = clock();
+		//printf("This interval cost %lf sec.\n", (double)(endTime - startTime) / CLOCKS_PER_SEC);
+		//printf("kernelSumInInterval = %lf sec.\n", kernelSumInInterval);
+		//printf("\n");
 	}
 
 #ifdef BLOCK_STAT
@@ -1622,13 +1367,13 @@ void lcsFastAdvection::Tracing() {
 	// Release device resources
 	cudaFree(d_exclusiveScanArrayForInt);
 
-	/// DEBUG ///
-	printf("kernelSum = %lf\n", kernelSum);
-	printf("numOfKernelCalls = %d\n", numOfKernelCalls);
+	///// DEBUG ///
+	//printf("kernelSum = %lf\n", kernelSum);
+	//printf("numOfKernelCalls = %d\n", numOfKernelCalls);
 
-	/// DEBUG ///
+	///// DEBUG ///
 	double endTime = lcs::GetCurrentTimeInSeconds();
-	//int endTime = clock();
+	////int endTime = clock();
 	printf("The total tracing time is %lf sec.\n", endTime - startTime);//(double)(endTime - startTime) / CLOCKS_PER_SEC);
 	printf("\n");
 
@@ -1709,12 +1454,9 @@ void lcsFastAdvection::GetLastPositions(vtkRectilinearGrid *finalOutput) {
 	dest->SetNumberOfComponents(3);
 	dest->SetNumberOfTuples(output->GetNumberOfPoints());
 
-	//xCoords->Delete();
-	//yCoords->Delete();
-	//zCoords->Delete();
-
-	/// DEBUG ///
-	printf("dest->GetNumberOfTuples() = %d\n", dest->GetNumberOfTuples());
+	xCoords->Delete();
+	yCoords->Delete();
+	zCoords->Delete();
 
 	for (int i = 0; i <= xRes; i++)
 		for (int j = 0; j <= yRes; j++)
@@ -1745,29 +1487,34 @@ void lcsFastAdvection::GetLastPositions(vtkRectilinearGrid *finalOutput) {
 		dest->SetTuple(pointId, finalPositions + i * 3);
 	}
 
-	//dest->Delete();
+	dest->Delete();
 
-	/// DEBUG ///
-	
-	//vtkSmartPointer<vtkXMLRectilinearGridWriter> writer = vtkSmartPointer<vtkXMLRectilinearGridWriter>::New();
-	//writer->SetFileName("test.vtu");
-
-	//vtkSmartPointer<vtkRectilinearGrid> newGrid = vtkSmartPointer<vtkRectilinearGrid>::New();
-	//newGrid->CopyStructure(output);
-	//newGrid->CopyAttributes(output);
-
-	//writer->SetInput(newGrid);
-	//writer->Write();
-	
 	finalOutput->CopyStructure(output);
 	finalOutput->CopyAttributes(output);
 
 	delete [] this->finalPositions;
 }
 
-void lcsFastAdvection::ComputeFlowMap(lcsAxisAlignedFlowMap *caller, lcsUnstructuredGridWithTimeVaryingPointData *input, vtkRectilinearGrid *output) {
-	printf("ComputeFlowMap\n");
+void lcsFastAdvection::SetBlockSizeAndMarginRatio(lcsAxisAlignedFlowMap *caller) {
+	if (caller->DefaultSettingOn()) {
+		lcs::TetrahedralGrid *grid = this->frames[0]->GetTetrahedralGrid();
+		double avgVol = 0;
+		for (int i = 0; i < grid->GetNumOfCells(); i++) {
+			lcs::Tetrahedron tet = grid->GetTetrahedron(i);
+			avgVol += tet.Volume();
+		}
 
+		avgVol /= grid->GetNumOfCells();
+		this->SetBlockSize(pow(avgVol * 125, 1.0 / 3));
+		this->SetMarginRatio(0);
+
+	} else {
+		this->SetBlockSize(caller->GetBlockSize());
+		this->SetMarginRatio(caller->GetMarginRatio());
+	}
+}
+
+void lcsFastAdvection::ComputeFlowMap(lcsAxisAlignedFlowMap *caller, lcsUnstructuredGridWithTimeVaryingPointData *input, vtkRectilinearGrid *output) {
 	this->caller = caller;
 	this->input = input;
 
@@ -1775,7 +1522,13 @@ void lcsFastAdvection::ComputeFlowMap(lcsAxisAlignedFlowMap *caller, lcsUnstruct
 
 	// Load all the frames
 	this->LoadFrames(input);
-	
+
+	// Set block size and margin ratio
+	this->SetBlockSizeAndMarginRatio(caller);
+
+	/// DEBUG ///
+	printf("this setting: %lf %lf\n", this->GetBlockSize(), this->GetMarginRatio());
+
 	// Put both topological and geometrical data into arrays
 	this->GetTopologyAndGeometry();
 	

@@ -24,27 +24,7 @@ class lcsFastAdvection {
 public:
 	enum IntegrationType {RK4};
 
-	lcsFastAdvection::lcsFastAdvection() {
-		// Up to user
-		this->IntegrationMethod = RK4;
-		this->UseUnitTestForTetBlkIntersection = false;
-		this->UseUnitTestForInitialCellLocation = true;
-
-		// Up to data
-		this->BlockSize = 0.15; //1.0;
-		this->MarginRatio = 0.3;
-
-		// Up to data, but seldom requires changes
-		this->EpsilonForTetBlkIntersection = 1e-10;
-		this->Epsilon = 1e-8;
-
-		// Up to system
-		this->MaxThreadsPerSM = 512;
-		this->MaxThreadsPerBlock = 256;
-		this->MaxSharedMemoryPerSM = 49000; //49152
-		this->WarpSize = 32;
-		this->MaxMultiple = 16;
-	}
+	lcsFastAdvection();
 
 	lcsGetMacro(BlockSize, double);
 	lcsGetMacro(MarginRatio, double);
@@ -71,6 +51,8 @@ public:
 	lcsSetMacro(MaxMultiple, int);
 	lcsSetMacro(UseUnitTestForTetBlkIntersection, bool);
 	lcsSetMacro(UseUnitTestForInitialCellLocation, bool);
+
+	void SetBlockSizeAndMarginRatio(lcsAxisAlignedFlowMap *caller);
 
 	// If the advection time is beyond the last time points, the last time point is assumed equal to the
 	// first time point and we do periodic advection.
