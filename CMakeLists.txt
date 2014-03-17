@@ -3,7 +3,7 @@ project(AxisAlignedFlowMap)
 
 find_package(VTK)
 if (VTK_FOUND)
- 	# include (${VTK_USE_FILE})
+ 	# include (${VTK_USE_FILE}) Uncommenting this line will cause an error.
  	message("VTK found")
 else()
  	message(ERROR "VTK not found")
@@ -19,38 +19,8 @@ if (CUDA_FOUND)
 else()
 	message("CUDA not found")
 endif()
-#include(${CUDA_USE_FILE})
 
-#if (VTK_FOUND)
-#	include(${VTK_USE_FILE})
-#else (VTK_FOUND)
-#	message(FATAL_ERROR, "Cannot build the executable without VTK. Please set the VTK_DIR")
-#endif (VTK_FOUND)
-
-#cuda_compile(lcsBigBlockInitializationForPositions lcsBigBlockInitializationForPositions.cu)
-#cuda_compile(lcsBigBlockInitializationForVelocities lcsBigBlockInitializationForVelocities.cu)
-#cuda_compile(lcsBlockedTracingOfRK4 lcsBlockedTracingOfRK4.cu)
-#cuda_compile(lcsCollectActiveParticlesForNewInterval lcsCollectActiveParticlesForNewInterval.cu)
-#cuda_compile(lcsCollectActiveParticlesForNewRun lcsCollectActiveParticlesForNewRun.cu)
-#cuda_compile(lcsExclusiveScanForInt lcsExclusiveScanForInt.cu)
-#cuda_compile(lcsGetGroupsForBlocks lcsGetGroupsForBlocks.cu)
-#cuda_compile(lcsGetStartOffsetInParticles lcsGetStartOffsetInParticles.cu)
-#cuda_compile(lcsInitialCellLocation lcsInitialCellLocation.cu)
-#cuda_compile(lcsRedistributeParticles lcsRedistributeParticles.cu)
-#cuda_compile(lcsTetrahedronBlockIntersection lcsTetrahedronBlockIntersection.cu)
-
-
-# CUDA_ADD_LIBRARY(mylib SHARED
-#    file1.cpp
-#    file2.cu
-#    file3.cpp
-#    OPTIONS -arch sm_20
-# )
-
-# TARGET_LINK_LIBRARIES(mylib ${CUDA_LIBRARIES})
-
-
-cuda_add_library(FlowMapLib SHARED
+cuda_add_library(AxisAlignedFlowMap SHARED
 	lcsBigBlockInitializationForPositions.cu
 	lcsBigBlockInitializationForVelocities.cu
 	lcsBlockedTracingOfRK4.cu
@@ -69,5 +39,4 @@ cuda_add_library(FlowMapLib SHARED
 	OPTIONS -arch sm_35
 )
 
-
-target_link_libraries(FlowMapLib ${VTK_LIBRARIES})
+target_link_libraries(AxisAlignedFlowMap ${VTK_LIBRARIES})
