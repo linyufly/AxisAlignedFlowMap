@@ -15,7 +15,15 @@ It will generate libAxisAlignedFlowMap.so in the same folder.
 
 The main.cpp together with CMakeListsForUser.txt is an example of using the compiled shared library libAxisAlignedFlowMap.so.
 
-When compiling, put main.cpp, CMakeListsForUser.txt (it should be renamed as CMakeLists.txt) and libAxisAlignedFlowMap.so in the same folder, then enter the commands below.
+When compiling, put
+
+	main.cpp
+	lcsUnstructuredGridWithTimeVaryingPointData.h
+	lcsAxisAlignedFlowMap.h
+	CMakeListsForUser.txt (it should be renamed as CMakeLists.txt)
+	libAxisAlignedFlowMap.so
+
+in the same folder, then enter the commands below.
 
       $ cmake .
       $ make
