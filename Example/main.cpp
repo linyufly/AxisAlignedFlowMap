@@ -49,18 +49,7 @@ int main() {
 	printf("finished flowMap setting\n");
 
 	vtkSmartPointer<vtkXMLRectilinearGridWriter> writer = vtkSmartPointer<vtkXMLRectilinearGridWriter>::New();
-	//writer->SetInputConnection(flowMap->GetOutput());
-
-	flowMap->Update();
-
-	printf("after flowMap->Update()\n");
-
-	//vtkSmartPointer<vtkRectilinearGrid> newGrid = vtkSmartPointer<vtkRectilinearGrid>::New();
-	//newGrid->CopyStructure(flowMap->GetOutput());
-	//newGrid->CopyAttributes(flowMap->GetOutput());
-
 	writer->SetInputConnection(flowMap->GetOutputPort());
-	//writer->SetInputConnection(newGrid->GetProducerPort());
 	writer->SetFileName("flowmap.vtk");
 
 	printf("before write\n");
@@ -69,5 +58,6 @@ int main() {
 
 	grid->Delete();
 	flowMap->Delete();
+
 	return 0;
 }
