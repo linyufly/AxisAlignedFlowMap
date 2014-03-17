@@ -13,7 +13,7 @@ It will generate libAxisAlignedFlowMap.so in the same folder.
 
 ### Example
 
-The main.cpp together with CMakeListsForUser.txt is an example of using the compiled shared library libAxisAlignedFlowMap.so.
+The Example folder contains an example of using the compiled shared library libAxisAlignedFlowMap.so.
 
 When compiling, put
 
@@ -28,7 +28,7 @@ in the same folder, then enter the commands below.
       $ cmake .
       $ make
 
-It will generate an executable of main.
+It will generate an executable called FlowMap.
 
 ### License
 
