@@ -14,6 +14,12 @@
 
 #define NUM_OF_SAMPLES 2
 
+std::string ToStr(int num) {
+	static char str[100];
+	sprintf(str, "%d", num);
+	return std::string(str);
+}
+
 int main() {
 	lcsUnstructuredGridWithTimeVaryingPointData *grid = lcsUnstructuredGridWithTimeVaryingPointData::New();
 	grid->SetNumberOfSamples(NUM_OF_SAMPLES);
@@ -21,7 +27,7 @@ int main() {
 	for (int i = 3040; i <= 4040; i += 40) {
 		if ((i - 3040) / 40 >= NUM_OF_SAMPLES) break;
 		printf("i = %d\n", i);
-		std::string name = "./vtkfiles/Patient2Rest_vel." + std::to_string((long long)i) + ".vtk";
+		std::string name = "../CUDATracer/patient2/Patient2Rest_vel." + ToStr(i) + ".vtk";
 		vtkSmartPointer<vtkUnstructuredGridReader> reader = vtkSmartPointer<vtkUnstructuredGridReader>::New();
 		reader->SetFileName(name.c_str());
 		reader->Update();
@@ -38,8 +44,7 @@ int main() {
 	flowMap->SetZRange(11, 12.3);
 	flowMap->SetTimeStep(0.0001);
 	flowMap->SetAdvectionTime(grid->GetTimePoint(grid->GetNumberOfSamples() - 1));
-	//flowMap->SetInput(grid);
-	flowMap->SetInputConnection(grid->GetProducerPort());
+	flowMap->SetInputData(grid);
 
 	printf("finished flowMap setting\n");
 
@@ -54,7 +59,7 @@ int main() {
 	//newGrid->CopyStructure(flowMap->GetOutput());
 	//newGrid->CopyAttributes(flowMap->GetOutput());
 
-	writer->SetInput(flowMap->GetOutput());
+	writer->SetInputConnection(flowMap->GetOutputPort());
 	//writer->SetInputConnection(newGrid->GetProducerPort());
 	writer->SetFileName("flowmap.vtk");
 
