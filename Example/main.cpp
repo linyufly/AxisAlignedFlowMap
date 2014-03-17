@@ -27,7 +27,7 @@ int main() {
 	for (int i = 3040; i <= 4040; i += 40) {
 		if ((i - 3040) / 40 >= NUM_OF_SAMPLES) break;
 		printf("i = %d\n", i);
-		std::string name = "../../CUDATracer/patient2/Patient2Rest_vel." + ToStr(i) + ".vtk";
+		std::string name = "./vtkfiles/Patient2Rest_vel." + ToStr(i) + ".vtk";
 		vtkSmartPointer<vtkUnstructuredGridReader> reader = vtkSmartPointer<vtkUnstructuredGridReader>::New();
 		reader->SetFileName(name.c_str());
 		reader->Update();

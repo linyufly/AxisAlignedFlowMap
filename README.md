@@ -4,8 +4,12 @@ A VTK-style filter for computing flowmap on an axis-aligned grid
 
 ### Build as shared library
 
+In the root folder, run the following.
+
       $ cmake .
       $ make
+
+It will generate libAxisAlignedFlowMap.so in the same folder.
 
 ### Example
 
