@@ -1,16 +1,13 @@
-AxisAlignedFlowMap
-==================
+### AxisAlignedFlowMap
 
 A VTK-style filter for computing flowmap on an axis-aligned grid
 
-Build as shared library
-=======================
+### Build as shared library
 
 $ cmake .
 $ make
 
-Example
-=======
+### Example
 
 The main.cpp together with CMakeListsForUser.txt is an example of using the compiled shared library libAxisAlignedFlowMap.
 
@@ -21,11 +18,10 @@ $ make
 
 It will generate an executable of main.
 
-License
-=======
+### License
+
 Its free and open source under GNU/zlib license. Please see [License.txt](https://github.com/linyufly/AxisAlignedFlowMap/blob/master/license.txt) for terms.
 
-Author
-======
-Mingcheng Chen
+### Author
+Mingcheng Chen  
 University of Illinois, Urbana-Champaign
