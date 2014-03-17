@@ -17,11 +17,11 @@ The Example folder contains an example of using the compiled shared library libA
 
 When compiling, put
 
-		main.cpp
-		lcsUnstructuredGridWithTimeVaryingPointData.h
-		lcsAxisAlignedFlowMap.h
-		CMakeListsForUser.txt (it should be renamed as CMakeLists.txt)
-		libAxisAlignedFlowMap.so
+      main.cpp
+      lcsUnstructuredGridWithTimeVaryingPointData.h
+      lcsAxisAlignedFlowMap.h
+      CMakeListsForUser.txt (it should be renamed as CMakeLists.txt)
+      libAxisAlignedFlowMap.so
 
 in the same folder, then enter the commands below.
 
