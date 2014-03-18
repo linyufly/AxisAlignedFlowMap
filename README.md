@@ -32,7 +32,7 @@ It will generate an executable called FlowMap.
 
 ### License
 
-It's free and open source under GNU/zlib license. Please see [License.txt](https://github.com/linyufly/AxisAlignedFlowMap/blob/master/license.txt) for terms.
+It is free and open source under GNU/zlib license. Please see [License.txt](https://github.com/linyufly/AxisAlignedFlowMap/blob/master/license.txt) for terms.
 
 ### Author
 Mingcheng Chen (advised by Prof. John C. Hart)  
