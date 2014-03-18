@@ -44,6 +44,23 @@ lcsFastAdvection::lcsFastAdvection() {
 	this->MaxSharedMemoryPerSM = 49000; //49152
 	this->WarpSize = 32;
 	this->MaxMultiple = 16;
+
+	int deviceId;
+	this->err = cudaGetDevice(&deviceId);
+	if (this->err) lcs::Error("cudaGetDevice() fails.");
+
+	cudaDeviceProp deviceProp;
+	cudaGetDeviceProperties(&deviceProp, deviceId);
+	if (deviceProp.sharedMemPerBlock < this->MaxSharedMemoryPerSM)
+		this->MaxSharedMemoryPerSM = deviceProp.sharedMemPerBlock;
+	if (deviceProp.maxThreadsPerBlock < this->MaxThreadsPerBlock)
+		this->MaxThreadsPerBlock = deviceProp.maxThreadsPerBlock;
+	if (deviceProp.maxThreadsPerMultiProcessor < this->MaxThreadsPerSM)
+		this->MaxThreadsPerSM = deviceProp.maxThreadsPerMultiProcessor;
+
+	/// DEBUG ///
+	//printf("%d %d %d | %d %d %d\n", deviceProp.sharedMemPerBlock, deviceProp.maxThreadsPerBlock, deviceProp.maxThreadsPerMultiProcessor,
+	//				this->MaxSharedMemoryPerSM, this->MaxThreadsPerBlock, this->MaxThreadsPerSM);
 }
 
 extern "C" void TetrahedronBlockIntersection(double *vertexPositions, int *tetrahedralConnectivities, int *queryTetrahedron, int *queryBlock, bool *queryResult,
