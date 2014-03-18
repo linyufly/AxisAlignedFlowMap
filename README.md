@@ -35,5 +35,5 @@ It will generate an executable called FlowMap.
 Its free and open source under GNU/zlib license. Please see [License.txt](https://github.com/linyufly/AxisAlignedFlowMap/blob/master/license.txt) for terms.
 
 ### Author
-Mingcheng Chen  
+Mingcheng Chen (advised by Prof. John C. Hart)  
 University of Illinois, Urbana-Champaign
